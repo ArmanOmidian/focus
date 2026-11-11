@@ -295,30 +295,50 @@ struct MonthGrid: View {
                 IconButton(systemName: "chevron.right", help: "Next month") { shift(1) }
             }
 
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
-                    Text(s)
-                        .font(.jakarta(10.5, .medium))
-                        .foregroundStyle(p.faint)
-                        .frame(height: 20)
+            LazyVGrid(columns: Self.columns, spacing: 2) {
+                ForEach(0..<7, id: \.self) { i in
+                    WeekdayLabel(text: weekdaySymbols[i])
                 }
-                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                    if let day {
-                        DayCell(day: day,
-                                selected: cal.isDate(day, inSameDayAs: selected),
-                                today: cal.isDateInToday(day),
-                                past: day < cal.startOfDay(for: Date())) { onPick(day) }
-                    } else {
-                        Color.clear.frame(height: 30)
-                    }
+                ForEach(0..<days.count, id: \.self) { i in
+                    cell(days[i])
                 }
             }
         }
     }
 
+    private static let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+
+    @ViewBuilder
+    private func cell(_ day: Date?) -> some View {
+        if let day {
+            DayCell(day: day,
+                    selected: cal.isDate(day, inSameDayAs: selected),
+                    today: cal.isDateInToday(day),
+                    past: isPast(day),
+                    action: { onPick(day) })
+        } else {
+            Color.clear.frame(height: 30)
+        }
+    }
+
+    private func isPast(_ day: Date) -> Bool {
+        day < cal.startOfDay(for: Date())
+    }
+
     private func shift(_ months: Int) {
         if let m = cal.date(byAdding: .month, value: months, to: month) { month = m }
+    }
+}
+
+private struct WeekdayLabel: View {
+    let text: String
+    @Environment(\.palette) private var p
+
+    var body: some View {
+        Text(text)
+            .font(.jakarta(10.5, .medium))
+            .foregroundStyle(p.faint)
+            .frame(height: 20)
     }
 }
 
@@ -331,22 +351,38 @@ private struct DayCell: View {
     @Environment(\.palette) private var p
     @State private var hover = false
 
+    private var number: String { String(Calendar.current.component(.day, from: day)) }
+    private var weight: Font.Weight { (today || selected) ? .semibold : .regular }
+
+    private var textColor: Color {
+        if selected { return p.background }
+        return past ? p.faint : p.text
+    }
+
+    private var fillColor: Color {
+        if selected { return p.text }
+        return hover ? p.hover : Color.clear
+    }
+
     var body: some View {
         Button(action: action) {
-            Text("\(Calendar.current.component(.day, from: day))")
-                .font(.jakarta(12, today || selected ? .semibold : .regular))
-                .foregroundStyle(selected ? p.background : (past ? p.faint : p.text))
+            Text(number)
+                .font(.jakarta(12, weight))
+                .foregroundStyle(textColor)
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(selected ? p.text : (hover ? p.hover : Color.clear)))
-                .overlay(alignment: .bottom) {
-                    if today && !selected {
-                        Circle().fill(p.text).frame(width: 3, height: 3).offset(y: -4)
-                    }
-                }
+                .background(Circle().fill(fillColor))
+                .overlay(alignment: .bottom) { todayDot }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+    }
+
+    @ViewBuilder
+    private var todayDot: some View {
+        if today && !selected {
+            Circle().fill(p.text).frame(width: 3, height: 3).offset(y: -4)
+        }
     }
 }
 
@@ -362,39 +398,51 @@ struct TimePicker: View {
         cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
     }
 
+    private static let presets: [Int] = [540, 720, 900, 1080, 1260]   // 9 AM, 12 PM, 3 PM, 6 PM, 9 PM
+    private static let rulerLabels: [String] = ["12 AM", "6 AM", "12 PM", "6 PM"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .lastTextBaseline) {
-                Text("Time")
-                    .font(.jakarta(12))
-                    .foregroundStyle(p.muted)
-                Spacer()
-                IconButton(systemName: "minus", help: "5 minutes earlier") { nudge(-5) }
-                Text(date.formatted(date: .omitted, time: .shortened))
-                    .font(.jakarta(24, .light))
-                    .monospacedDigit()
-                    .frame(minWidth: 96)
-                    .contentTransition(.numericText())
-                    .animation(.easeOut(duration: 0.15), value: minutesOfDay)
-                IconButton(systemName: "plus", help: "5 minutes later") { nudge(5) }
-            }
+            header
+            ruler
+            presetRow
+        }
+    }
 
-            VStack(spacing: 4) {
-                TimeRuler(minutes: minutesOfDay) { set($0) }
-                HStack(spacing: 0) {
-                    ForEach(["12 AM", "6 AM", "12 PM", "6 PM"], id: \.self) { t in
-                        Text(t)
-                            .font(.jakarta(9.5))
-                            .foregroundStyle(p.faint)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+    private var timeText: String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text("Time")
+                .font(.jakarta(12))
+                .foregroundStyle(p.muted)
+            Spacer()
+            IconButton(systemName: "minus", help: "5 minutes earlier") { nudge(-5) }
+            Text(timeText)
+                .font(.jakarta(24, .light))
+                .monospacedDigit()
+                .frame(minWidth: 96)
+            IconButton(systemName: "plus", help: "5 minutes later") { nudge(5) }
+        }
+    }
+
+    private var ruler: some View {
+        VStack(spacing: 4) {
+            TimeRuler(minutes: minutesOfDay, onChange: set)
+            HStack(spacing: 0) {
+                ForEach(Self.rulerLabels, id: \.self) { t in
+                    RulerLabel(text: t)
                 }
             }
+        }
+    }
 
-            HStack(spacing: 6) {
-                ForEach([9 * 60, 12 * 60, 15 * 60, 18 * 60, 21 * 60], id: \.self) { m in
-                    Chip(label(m), selected: minutesOfDay == m) { set(m) }
-                }
+    private var presetRow: some View {
+        HStack(spacing: 6) {
+            ForEach(Self.presets, id: \.self) { m in
+                PresetChip(minutes: m, current: minutesOfDay, title: label(m), onPick: set)
             }
         }
     }
@@ -412,6 +460,29 @@ struct TimePicker: View {
     private func nudge(_ delta: Int) {
         let rounded = (minutesOfDay / 5) * 5
         set(rounded + delta)
+    }
+}
+
+private struct RulerLabel: View {
+    let text: String
+    @Environment(\.palette) private var p
+
+    var body: some View {
+        Text(text)
+            .font(.jakarta(9.5))
+            .foregroundStyle(p.faint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct PresetChip: View {
+    let minutes: Int
+    let current: Int
+    let title: String
+    let onPick: (Int) -> Void
+
+    var body: some View {
+        Chip(title, selected: minutes == current) { onPick(minutes) }
     }
 }
 

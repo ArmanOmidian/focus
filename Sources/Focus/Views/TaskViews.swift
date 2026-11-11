@@ -59,33 +59,15 @@ struct TaskListView: View {
         ScrollView {
             VStack(spacing: spacing) {
                 if active.isEmpty {
-                    Text(completed.isEmpty ? "Nothing here yet. Add your first task above." : "All done. Nice work.")
+                    Text(emptyMessage(completed.isEmpty))
                         .font(.jakarta(12))
                         .foregroundStyle(p.faint)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
                 }
 
-                ForEach(Array(active.enumerated()), id: \.element.id) { index, task in
-                    let isDragging = draggingID == task.id
-                    TaskRow(
-                        task: task,
-                        isDragging: isDragging,
-                        onDragChanged: { dy in
-                            ui.dragLock = true
-                            if draggingID == nil { draggingID = task.id }
-                            if draggingID == task.id { dragOffset = dy }
-                        },
-                        onDragEnded: { finishDrag(ids) }
-                    )
-                    .background(GeometryReader { g in
-                        Color.clear
-                            .onAppear { rowHeights[task.id] = g.size.height }
-                            .onChange(of: g.size.height) { _, h in rowHeights[task.id] = h }
-                    })
-                    .offset(y: isDragging ? dragOffset : shift(for: index, ids: ids, target: target))
-                    .zIndex(isDragging ? 1 : 0)
-                    .animation(isDragging ? nil : .easeOut(duration: 0.18), value: target)
+                ForEach(active) { task in
+                    row(task, index: ids.firstIndex(of: task.id) ?? 0, ids: ids, target: target)
                 }
 
                 if !completed.isEmpty {
@@ -113,6 +95,33 @@ struct TaskListView: View {
         } message: {
             Text("This can’t be undone.")
         }
+    }
+
+    private func emptyMessage(_ nothingCompleted: Bool) -> String {
+        nothingCompleted ? "Nothing here yet. Add your first task above." : "All done. Nice work."
+    }
+
+    private func row(_ task: TaskItem, index: Int, ids: [UUID], target: Int?) -> some View {
+        let isDragging = draggingID == task.id
+        let y: CGFloat = isDragging ? dragOffset : shift(for: index, ids: ids, target: target)
+        let anim: Animation? = isDragging ? nil : .easeOut(duration: 0.18)
+
+        return TaskRow(
+            task: task,
+            isDragging: isDragging,
+            onDragChanged: { dy in dragChanged(task.id, dy) },
+            onDragEnded: { finishDrag(ids) }
+        )
+        .background(HeightReader(id: task.id, heights: $rowHeights))
+        .offset(y: y)
+        .zIndex(isDragging ? 1 : 0)
+        .animation(anim, value: target)
+    }
+
+    private func dragChanged(_ id: UUID, _ dy: CGFloat) {
+        ui.dragLock = true
+        if draggingID == nil { draggingID = id }
+        if draggingID == id { dragOffset = dy }
     }
 
     // MARK: Drag maths
@@ -334,5 +343,19 @@ struct CompletedRow: View {
         if hours < 1 { return "deleting soon" }
         if hours < 24 { return "\(Int(hours.rounded(.up)))h left" }
         return "\(Int((hours / 24).rounded(.up)))d left"
+    }
+}
+
+/// Measures a row's height (used to work out where a dragged row lands).
+private struct HeightReader: View {
+    let id: UUID
+    @Binding var heights: [UUID: CGFloat]
+
+    var body: some View {
+        GeometryReader { g in
+            Color.clear
+                .onAppear { heights[id] = g.size.height }
+                .onChange(of: g.size.height) { _, h in heights[id] = h }
+        }
     }
 }
