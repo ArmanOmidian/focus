@@ -108,6 +108,21 @@ final class Store: ObservableObject {
         data.tasks.removeAll { $0.completedAt != nil && !justCompleted.contains($0.id) }
     }
 
+    // MARK: Flows (finished focus sessions)
+
+    var flowsToday: Int {
+        data.flows.filter { Calendar.current.isDateInToday($0) }.count
+    }
+
+    func recordFlow() {
+        let cutoff = Date().addingTimeInterval(-60 * 86_400)
+        data.flows = data.flows.filter { $0 > cutoff } + [Date()]
+    }
+
+    func resetTodayFlows() {
+        data.flows.removeAll { Calendar.current.isDateInToday($0) }
+    }
+
     // MARK: Auto-delete
 
     func expiryDate(for task: TaskItem) -> Date? {

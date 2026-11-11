@@ -82,6 +82,8 @@ struct AppSettings: Codable, Equatable {
     var shortBreakMinutes = 5
     var longBreakMinutes = 15
     var autoSwitchToBreak = true
+    /// Every Nth finished focus session (flow) is followed by a long break.
+    var longBreakEvery = 4
     var soundEnabled = true
     var soundVolume: Double = 0.8
     var showTimerInMenuBar = true
@@ -103,6 +105,7 @@ struct AppSettings: Codable, Equatable {
         shortBreakMinutes = try c.decodeIfPresent(Int.self, forKey: .shortBreakMinutes) ?? d.shortBreakMinutes
         longBreakMinutes = try c.decodeIfPresent(Int.self, forKey: .longBreakMinutes) ?? d.longBreakMinutes
         autoSwitchToBreak = try c.decodeIfPresent(Bool.self, forKey: .autoSwitchToBreak) ?? d.autoSwitchToBreak
+        longBreakEvery = try c.decodeIfPresent(Int.self, forKey: .longBreakEvery) ?? d.longBreakEvery
         soundEnabled = try c.decodeIfPresent(Bool.self, forKey: .soundEnabled) ?? d.soundEnabled
         soundVolume = try c.decodeIfPresent(Double.self, forKey: .soundVolume) ?? d.soundVolume
         showTimerInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showTimerInMenuBar) ?? d.showTimerInMenuBar
@@ -119,6 +122,8 @@ struct AppData: Codable, Equatable {
     /// Order in this array = the order you arranged by drag and drop.
     var tasks: [TaskItem] = []
     var settings = AppSettings()
+    /// When each focus session (flow) was finished. Kept for 60 days.
+    var flows: [Date] = []
 
     init() {}
 
@@ -126,6 +131,7 @@ struct AppData: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         tasks = try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? []
         settings = try c.decodeIfPresent(AppSettings.self, forKey: .settings) ?? AppSettings()
+        flows = try c.decodeIfPresent([Date].self, forKey: .flows) ?? []
     }
 
     static func sample() -> AppData {

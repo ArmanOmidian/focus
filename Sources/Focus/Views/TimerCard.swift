@@ -40,6 +40,7 @@ struct TimerCard: View {
                     .help(preset.label)
                 }
                 Spacer()
+                FlowsIndicator(today: store.flowsToday, every: store.data.settings.longBreakEvery)
                 Button {
                     ui.showSettings = true
                 } label: {
@@ -80,6 +81,39 @@ struct TimerCard: View {
         .padding(.bottom, 10)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(p.card))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(p.border))
+    }
+}
+
+/// Today's finished focus sessions: dots for the current round (long break after a full round) + the total.
+struct FlowsIndicator: View {
+    let today: Int
+    let every: Int
+    @Environment(\.palette) private var p
+
+    private var round: Int { max(1, every) }
+    private var filled: Int {
+        guard today > 0 else { return 0 }
+        let r = today % round
+        return r == 0 ? round : r
+    }
+    private var label: String { today == 1 ? "1 flow" : "\(today) flows" }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 3) {
+                ForEach(0..<round, id: \.self) { i in
+                    Circle()
+                        .fill(i < filled ? p.text : p.tick)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            Text(label)
+                .font(.jakarta(11))
+                .monospacedDigit()
+                .foregroundStyle(p.muted)
+        }
+        .help("Focus sessions finished today. A long break comes after every \(round).")
+        .animation(.easeOut(duration: 0.2), value: today)
     }
 }
 

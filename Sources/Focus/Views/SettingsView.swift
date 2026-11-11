@@ -31,6 +31,19 @@ struct SettingsView: View {
                         Divider()
                         SettingsRow("Long break") { minutes(s.longBreakMinutes) }
                         Divider()
+                        SettingsRow("Long break after every") {
+                            Stepper(value: s.longBreakEvery, in: 2...8) {
+                                Text("\(store.data.settings.longBreakEvery) flows")
+                                    .font(.jakarta(12))
+                                    .monospacedDigit()
+                            }
+                        }
+                        Divider()
+                        SettingsRow("Flows today: \(store.flowsToday)") {
+                            Button("Reset") { store.resetTodayFlows() }
+                                .disabled(store.flowsToday == 0)
+                        }
+                        Divider()
                         SettingsRow("Switch between focus and break automatically") {
                             Toggle("", isOn: s.autoSwitchToBreak).toggleStyle(.switch).labelsHidden().controlSize(.small)
                         }

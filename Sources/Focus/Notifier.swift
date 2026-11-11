@@ -97,11 +97,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: Timer
 
-    func timerFinished(wasFocus: Bool) {
+    func timerFinished(wasFocus: Bool, flowsToday: Int) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = wasFocus ? "Focus session done" : "Break is over"
-        content.body = wasFocus ? "Nice work. Time for a break." : "Ready for the next focus session?"
+        let flows = flowsToday == 1 ? "1 flow today" : "\(flowsToday) flows today"
+        content.body = wasFocus ? "\(flows). Time for a break." : "Ready for the next flow?"
         content.sound = nil   // the app plays its own chime
         center.add(UNNotificationRequest(identifier: "timer-\(UUID().uuidString)", content: content, trigger: nil))
     }

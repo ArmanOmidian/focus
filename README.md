@@ -7,6 +7,7 @@ A minimal to-do list and pomodoro timer that lives in the macOS menu bar.
 - **Due date and time:** click the calendar icon on a task (it appears on hover). Pick a day, then drag the time ruler or tap a common time. You get a notification at the due time, or earlier if you change it in Settings.
 - **Completed:** checking a task strikes it through and drops it into *Completed*. Click *Completed* to open it. From there you can restore a task, delete it, or clear everything. Completed tasks are deleted automatically after 7 days (changeable in Settings).
 - **Pomodoro timer:** drag the ruler or pick a preset (5m / 25m / 15m), then click *start*. A soft chime plays when time is up. The countdown also shows in the menu bar.
+- **Flows:** every finished focus session is a flow. The timer card shows today's count, and a long break comes after every 4 flows (changeable in Settings).
 - **Menu bar app:** click the icon in the menu bar to open or hide Focus. Right-click it for New Task, the timer, Settings and Quit. Closing the window only hides it, and Focus never shows in the Dock.
 - **Settings** (gear icon or `⌘,`): timer lengths, auto-switch between focus and break, sound and volume, reminder timing, how long to keep completed tasks, appearance, open at login.
 

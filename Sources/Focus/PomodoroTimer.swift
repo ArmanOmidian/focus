@@ -93,19 +93,30 @@ final class PomodoroTimer: ObservableObject {
         if left <= 0 { finish() }
     }
 
+    /// Anything that isn't one of the break lengths counts as a focus session.
+    var isBreak: Bool {
+        let s = store.data.settings
+        return durationMinutes == s.shortBreakMinutes || durationMinutes == s.longBreakMinutes
+    }
+
     private func finish() {
         stopTicker()
         let s = store.data.settings
-        let wasFocus = durationMinutes == s.focusMinutes
+        let wasFocus = !isBreak
 
+        if wasFocus { store.recordFlow() }
         if s.soundEnabled { Chime.play(volume: s.soundVolume) }
-        Notifier.shared.timerFinished(wasFocus: wasFocus)
+        Notifier.shared.timerFinished(wasFocus: wasFocus, flowsToday: store.flowsToday)
 
         state = .idle
-        if wasFocus && s.autoSwitchToBreak {
-            durationMinutes = s.shortBreakMinutes
-        } else if !wasFocus && s.autoSwitchToBreak {
-            durationMinutes = s.focusMinutes
+        if s.autoSwitchToBreak {
+            if wasFocus {
+                let every = max(1, s.longBreakEvery)
+                let longBreak = store.flowsToday % every == 0
+                durationMinutes = longBreak ? s.longBreakMinutes : s.shortBreakMinutes
+            } else {
+                durationMinutes = s.focusMinutes
+            }
         }
         remaining = TimeInterval(durationMinutes * 60)
     }

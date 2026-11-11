@@ -155,6 +155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         menu.addItem(item(timerTitle, #selector(menuToggleTimer)))
         if timer.state != .idle { menu.addItem(item("Reset Timer", #selector(menuResetTimer))) }
+        let flows = store.flowsToday
+        let flowsItem = NSMenuItem(title: flows == 1 ? "1 flow today" : "\(flows) flows today", action: nil, keyEquivalent: "")
+        flowsItem.isEnabled = false
+        menu.addItem(flowsItem)
         menu.addItem(.separator())
         menu.addItem(item("Settings…", #selector(menuSettings)))
         menu.addItem(item("Quit Focus", #selector(menuQuit), key: "q"))
