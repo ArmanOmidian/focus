@@ -132,4 +132,6 @@ final class UIState: ObservableObject {
     @Published var showCompleted = false
     /// Incremented to put the cursor in the "Add a task" field.
     @Published var focusAddField = 0
+    /// True while a task is being dragged (and briefly after), so releasing over a button doesn't click it.
+    var dragLock = false
 }

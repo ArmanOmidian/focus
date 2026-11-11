@@ -36,7 +36,7 @@ struct AddTaskField: View {
     }
 }
 
-// MARK: - List
+// MARK: - List (with drag anywhere on a row to reorder)
 
 struct TaskListView: View {
     @EnvironmentObject private var store: Store
@@ -44,44 +44,67 @@ struct TaskListView: View {
     @Environment(\.palette) private var p
     @State private var confirmClear = false
 
+    // Drag state
+    @State private var draggingID: UUID?
+    @State private var dragOffset: CGFloat = 0
+    @State private var rowHeights: [UUID: CGFloat] = [:]
+    private let spacing: CGFloat = 2
+
     var body: some View {
         let active = store.activeTasks
         let completed = store.completedTasks
+        let ids = active.map(\.id)
+        let target = targetIndex(ids)
 
-        List {
-            if active.isEmpty {
-                Text(completed.isEmpty ? "Nothing here yet. Add your first task above." : "All done. Nice work.")
-                    .font(.jakarta(12))
-                    .foregroundStyle(p.faint)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .modifier(PlainRow())
-            }
+        ScrollView {
+            VStack(spacing: spacing) {
+                if active.isEmpty {
+                    Text(completed.isEmpty ? "Nothing here yet. Add your first task above." : "All done. Nice work.")
+                        .font(.jakarta(12))
+                        .foregroundStyle(p.faint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                }
 
-            ForEach(active) { task in
-                TaskRow(task: task)
-                    .modifier(PlainRow())
-            }
-            .onMove { from, to in
-                withAnimation(.easeOut(duration: 0.2)) { store.moveActive(from: from, to: to) }
-            }
+                ForEach(Array(active.enumerated()), id: \.element.id) { index, task in
+                    let isDragging = draggingID == task.id
+                    TaskRow(
+                        task: task,
+                        isDragging: isDragging,
+                        onDragChanged: { dy in
+                            ui.dragLock = true
+                            if draggingID == nil { draggingID = task.id }
+                            if draggingID == task.id { dragOffset = dy }
+                        },
+                        onDragEnded: { finishDrag(ids) }
+                    )
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { rowHeights[task.id] = g.size.height }
+                            .onChange(of: g.size.height) { _, h in rowHeights[task.id] = h }
+                    })
+                    .offset(y: isDragging ? dragOffset : shift(for: index, ids: ids, target: target))
+                    .zIndex(isDragging ? 1 : 0)
+                    .animation(isDragging ? nil : .easeOut(duration: 0.18), value: target)
+                }
 
-            if !completed.isEmpty {
-                completedHeader(count: completed.count)
-                    .padding(.top, 14)
-                    .modifier(PlainRow())
+                if !completed.isEmpty {
+                    completedHeader(count: completed.count)
+                        .padding(.top, 14)
 
-                if ui.showCompleted {
-                    ForEach(completed) { task in
-                        CompletedRow(task: task)
-                            .modifier(PlainRow())
+                    if ui.showCompleted {
+                        ForEach(completed) { task in
+                            CompletedRow(task: task)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.top, 4)
+            .padding(.bottom, 20)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .padding(.horizontal, 10)
+        .scrollIndicators(.never)
         .animation(.easeOut(duration: 0.2), value: ui.showCompleted)
         .confirmationDialog("Delete all completed tasks?", isPresented: $confirmClear) {
             Button("Delete All", role: .destructive) {
@@ -91,6 +114,54 @@ struct TaskListView: View {
             Text("This can’t be undone.")
         }
     }
+
+    // MARK: Drag maths
+
+    private func height(_ id: UUID) -> CGFloat { (rowHeights[id] ?? 40) + spacing }
+
+    /// Where the dragged row would land right now.
+    private func targetIndex(_ ids: [UUID]) -> Int? {
+        guard let id = draggingID, let from = ids.firstIndex(of: id) else { return nil }
+        var target = from
+        if dragOffset > 0 {
+            var passed: CGFloat = 0
+            for j in (from + 1)..<max(from + 1, ids.count) {
+                let h = height(ids[j])
+                if dragOffset > passed + h / 2 { target = j; passed += h } else { break }
+            }
+        } else if dragOffset < 0 {
+            var passed: CGFloat = 0
+            for j in stride(from: from - 1, through: 0, by: -1) {
+                let h = height(ids[j])
+                if -dragOffset > passed + h / 2 { target = j; passed += h } else { break }
+            }
+        }
+        return target
+    }
+
+    /// Other rows slide out of the way.
+    private func shift(for index: Int, ids: [UUID], target: Int?) -> CGFloat {
+        guard let target, let id = draggingID, let from = ids.firstIndex(of: id) else { return 0 }
+        let h = height(id)
+        if from < target, index > from, index <= target { return -h }
+        if target < from, index >= target, index < from { return h }
+        return 0
+    }
+
+    private func finishDrag(_ ids: [UUID]) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { ui.dragLock = false }
+        guard let id = draggingID, let from = ids.firstIndex(of: id) else { return }
+        let target = targetIndex(ids) ?? from
+        withAnimation(.easeOut(duration: 0.2)) {
+            if target != from {
+                store.moveActive(from: IndexSet(integer: from), to: target > from ? target + 1 : target)
+            }
+            draggingID = nil
+            dragOffset = 0
+        }
+    }
+
+    // MARK: Completed header
 
     private func completedHeader(count: Int) -> some View {
         HStack(spacing: 8) {
@@ -126,22 +197,16 @@ struct TaskListView: View {
     }
 }
 
-/// Removes the default list row styling.
-struct PlainRow: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-    }
-}
-
 // MARK: - Active row
 
 struct TaskRow: View {
     let task: TaskItem
+    let isDragging: Bool
+    let onDragChanged: (CGFloat) -> Void
+    let onDragEnded: () -> Void
 
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var ui: UIState
     @Environment(\.palette) private var p
     @State private var hover = false
     @State private var editing = false
@@ -153,6 +218,7 @@ struct TaskRow: View {
 
         HStack(spacing: 10) {
             CheckBox(checked: done) {
+                guard !ui.dragLock else { return }
                 withAnimation(.easeOut(duration: 0.2)) { store.toggle(task.id) }
             }
 
@@ -170,24 +236,41 @@ struct TaskRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { beginEdit() }
-                    .help("Double-click to rename · drag to reorder")
             }
 
-            DueButton(task: task, rowHover: hover)
+            DueButton(task: task, rowHover: hover && !isDragging)
                 .opacity(done ? 0.5 : 1)
             PriorityPill(task: task)
                 .opacity(done ? 0.5 : 1)
             IconButton(systemName: "trash", help: "Delete", destructive: true) {
+                guard !ui.dragLock else { return }
                 withAnimation(.easeOut(duration: 0.2)) { store.delete(task.id) }
             }
-            .opacity(hover ? 1 : 0)
+            .opacity(hover && !isDragging ? 1 : 0)
         }
         .padding(.leading, 10)
         .padding(.trailing, 4)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hover ? p.hover : Color.clear))
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(isDragging ? p.card : (hover ? p.hover : Color.clear))
+                .shadow(color: .black.opacity(isDragging ? 0.12 : 0), radius: 10, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(isDragging ? p.border : Color.clear)
+        )
+        .scaleEffect(isDragging ? 1.015 : 1)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
+        // Press anywhere on the row and drag to reorder (not while renaming).
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                .onChanged { onDragChanged($0.translation.height) }
+                .onEnded { _ in onDragEnded() },
+            including: editing ? .subviews : .all
+        )
+        .help("Drag to reorder · double-click to rename")
         .onChange(of: titleFocused) { _, focused in
             if !focused && editing { commit() }
         }

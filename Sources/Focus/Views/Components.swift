@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Checkbox
 
@@ -60,11 +61,12 @@ struct IconButton: View {
 struct PriorityPill: View {
     let task: TaskItem
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var ui: UIState
     @Environment(\.palette) private var p
     @State private var open = false
 
     var body: some View {
-        Button { open.toggle() } label: {
+        Button { if !ui.dragLock { open.toggle() } } label: {
             Text(task.priority.label)
                 .font(.jakarta(11, .medium))
                 .foregroundStyle(task.priority.color)
@@ -128,11 +130,12 @@ struct DueButton: View {
     let task: TaskItem
     let rowHover: Bool
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var ui: UIState
     @Environment(\.palette) private var p
     @State private var open = false
 
     var body: some View {
-        Button { open.toggle() } label: {
+        Button { if !ui.dragLock { open.toggle() } } label: {
             Group {
                 if let due = task.due {
                     HStack(spacing: 4) {
@@ -156,82 +159,304 @@ struct DueButton: View {
         .help(task.due == nil ? String("Add a due date") : String("Change due date"))
         .popover(isPresented: $open, arrowEdge: .bottom) {
             DuePopover(task: task) { open = false }
+                .environment(\.palette, p)
         }
     }
 }
 
+/// Minimal date + time picker: quick chips, a small calendar, and a time ruler you drag.
 struct DuePopover: View {
     let task: TaskItem
     let close: () -> Void
     @EnvironmentObject private var store: Store
     @Environment(\.palette) private var p
 
-    private var current: Date { task.due ?? DueFormat.suggested() }
+    @State private var date: Date = DueFormat.suggested()
+    @State private var month: Date = Date()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
-                quick("Today", days: 0)
-                quick("Tomorrow", days: 1)
-                quick("Next week", days: 7)
+                Chip("Today", selected: Calendar.current.isDateInToday(date)) { setDay(offset: 0) }
+                Chip("Tomorrow", selected: Calendar.current.isDateInTomorrow(date)) { setDay(offset: 1) }
+                Chip("Next week", selected: false) { setDay(offset: 7) }
             }
 
-            DatePicker("", selection: Binding(
-                get: { current },
-                set: { set(DueFormat.combine(day: $0, time: current)) }
-            ), displayedComponents: .date)
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-
-            HStack {
-                Image(systemName: "clock")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Text("Time").font(.jakarta(12))
-                Spacer()
-                DatePicker("", selection: Binding(
-                    get: { current },
-                    set: { set(DueFormat.combine(day: current, time: $0)) }
-                ), displayedComponents: .hourAndMinute)
-                .datePickerStyle(.stepperField)
-                .labelsHidden()
+            MonthGrid(selected: date, month: $month) { day in
+                date = DueFormat.combine(day: day, time: date)
             }
+
+            Rectangle().fill(p.border).frame(height: 1)
+
+            TimePicker(date: $date)
 
             HStack {
                 if task.due != nil {
-                    Button("Remove") {
+                    TextButton("remove", muted: true) {
                         store.update(task.id) { $0.due = nil }
                         close()
                     }
-                    .foregroundStyle(p.danger)
-                } else {
-                    Text("You’ll get a notification.")
-                        .font(.jakarta(11))
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") {
-                    if task.due == nil { set(current) }
+                Button {
+                    store.update(task.id) { $0.due = date }
                     close()
+                } label: {
+                    Text("Set")
+                        .font(.jakarta(12, .semibold))
+                        .foregroundStyle(p.background)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(p.text))
+                        .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
             }
-            .font(.jakarta(12))
         }
-        .padding(14)
-        .frame(width: 260)
+        .padding(16)
+        .frame(width: 272)
+        .background(p.background)
+        .foregroundStyle(p.text)
+        .onAppear {
+            date = task.due ?? DueFormat.suggested()
+            month = date
+        }
     }
 
-    private func set(_ date: Date) {
-        store.update(task.id) { $0.due = date }
+    private func setDay(offset: Int) {
+        let day = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+        date = DueFormat.combine(day: day, time: date)
+        month = date
+    }
+}
+
+struct Chip: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+    @Environment(\.palette) private var p
+    @State private var hover = false
+
+    init(_ title: String, selected: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.selected = selected
+        self.action = action
     }
 
-    private func quick(_ title: String, days: Int) -> some View {
-        Button(title) {
-            let cal = Calendar.current
-            let day = cal.date(byAdding: .day, value: days, to: Date()) ?? Date()
-            set(DueFormat.combine(day: day, time: current))
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.jakarta(11.5, .medium))
+                .foregroundStyle(selected ? p.background : p.text)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(selected ? p.text : (hover ? p.hover : p.field)))
+                .contentShape(Capsule())
         }
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+    }
+}
+
+/// A small, quiet month calendar.
+struct MonthGrid: View {
+    let selected: Date
+    @Binding var month: Date
+    let onPick: (Date) -> Void
+    @Environment(\.palette) private var p
+
+    private var cal: Calendar { Calendar.current }
+
+    private var days: [Date?] {
+        guard let interval = cal.dateInterval(of: .month, for: month) else { return [] }
+        let first = interval.start
+        let lead = (cal.component(.weekday, from: first) - cal.firstWeekday + 7) % 7
+        let count = cal.range(of: .day, in: .month, for: first)?.count ?? 30
+        var result: [Date?] = Array(repeating: nil, count: lead)
+        for d in 0..<count { result.append(cal.date(byAdding: .day, value: d, to: first)) }
+        while result.count % 7 != 0 { result.append(nil) }
+        return result
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = cal.veryShortWeekdaySymbols
+        let start = cal.firstWeekday - 1
+        return Array(symbols[start...] + symbols[..<start])
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(month.formatted(.dateTime.month(.wide).year()))
+                    .font(.jakarta(13, .semibold))
+                Spacer()
+                IconButton(systemName: "chevron.left", help: "Previous month") { shift(-1) }
+                IconButton(systemName: "chevron.right", help: "Next month") { shift(1) }
+            }
+
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
+                    Text(s)
+                        .font(.jakarta(10.5, .medium))
+                        .foregroundStyle(p.faint)
+                        .frame(height: 20)
+                }
+                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                    if let day {
+                        DayCell(day: day,
+                                selected: cal.isDate(day, inSameDayAs: selected),
+                                today: cal.isDateInToday(day),
+                                past: day < cal.startOfDay(for: Date())) { onPick(day) }
+                    } else {
+                        Color.clear.frame(height: 30)
+                    }
+                }
+            }
+        }
+    }
+
+    private func shift(_ months: Int) {
+        if let m = cal.date(byAdding: .month, value: months, to: month) { month = m }
+    }
+}
+
+private struct DayCell: View {
+    let day: Date
+    let selected: Bool
+    let today: Bool
+    let past: Bool
+    let action: () -> Void
+    @Environment(\.palette) private var p
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("\(Calendar.current.component(.day, from: day))")
+                .font(.jakarta(12, today || selected ? .semibold : .regular))
+                .foregroundStyle(selected ? p.background : (past ? p.faint : p.text))
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(selected ? p.text : (hover ? p.hover : Color.clear)))
+                .overlay(alignment: .bottom) {
+                    if today && !selected {
+                        Circle().fill(p.text).frame(width: 3, height: 3).offset(y: -4)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+    }
+}
+
+/// Time picker in the same style as the timer: drag the ruler across the day (15-minute steps),
+/// fine-tune with − / +, or tap a common time.
+struct TimePicker: View {
+    @Binding var date: Date
+    @Environment(\.palette) private var p
+
+    private var cal: Calendar { Calendar.current }
+
+    private var minutesOfDay: Int {
+        cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .lastTextBaseline) {
+                Text("Time")
+                    .font(.jakarta(12))
+                    .foregroundStyle(p.muted)
+                Spacer()
+                IconButton(systemName: "minus", help: "5 minutes earlier") { nudge(-5) }
+                Text(date.formatted(date: .omitted, time: .shortened))
+                    .font(.jakarta(24, .light))
+                    .monospacedDigit()
+                    .frame(minWidth: 96)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.15), value: minutesOfDay)
+                IconButton(systemName: "plus", help: "5 minutes later") { nudge(5) }
+            }
+
+            VStack(spacing: 4) {
+                TimeRuler(minutes: minutesOfDay) { set($0) }
+                HStack(spacing: 0) {
+                    ForEach(["12 AM", "6 AM", "12 PM", "6 PM"], id: \.self) { t in
+                        Text(t)
+                            .font(.jakarta(9.5))
+                            .foregroundStyle(p.faint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                ForEach([9 * 60, 12 * 60, 15 * 60, 18 * 60, 21 * 60], id: \.self) { m in
+                    Chip(label(m), selected: minutesOfDay == m) { set(m) }
+                }
+            }
+        }
+    }
+
+    private func label(_ m: Int) -> String {
+        let d = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+        return d.formatted(.dateTime.hour())
+    }
+
+    private func set(_ minutes: Int) {
+        let m = max(0, min(24 * 60 - 1, minutes))
+        date = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: date) ?? date
+    }
+
+    private func nudge(_ delta: Int) {
+        let rounded = (minutesOfDay / 5) * 5
+        set(rounded + delta)
+    }
+}
+
+struct TimeRuler: View {
+    let minutes: Int
+    let onChange: (Int) -> Void
+    @Environment(\.palette) private var p
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let palette = p
+            let fraction = CGFloat(minutes) / CGFloat(24 * 60)
+
+            Canvas { ctx, size in
+                let ticks = 48   // every 30 minutes
+                for i in 0...ticks {
+                    let x = CGFloat(i) / CGFloat(ticks) * (size.width - 1) + 0.5
+                    let major = i % 12 == 0   // every 6 hours
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: major ? 2 : 6))
+                    path.addLine(to: CGPoint(x: x, y: size.height - (major ? 2 : 6)))
+                    ctx.stroke(path, with: .color(palette.tick), lineWidth: 1)
+                }
+                let ix = fraction * (size.width - 2) + 1
+                var indicator = Path()
+                indicator.move(to: CGPoint(x: ix, y: 0))
+                indicator.addLine(to: CGPoint(x: ix, y: size.height))
+                ctx.stroke(indicator, with: .color(palette.text), lineWidth: 2)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        guard width > 0 else { return }
+                        let raw = g.location.x / width * CGFloat(24 * 60)
+                        let snapped = Int((raw / 15).rounded()) * 15
+                        let value = max(0, min(24 * 60 - 15, snapped))
+                        if value != minutes {
+                            onChange(value)
+                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                        }
+                    }
+            )
+        }
+        .frame(height: 26)
     }
 }

@@ -2,9 +2,9 @@
 
 A minimal to-do list and pomodoro timer that lives in the macOS menu bar.
 
-- **Tasks:** type in *Add a task* and press Enter. Double-click a task to rename it. Drag tasks to reorder them.
+- **Tasks:** type in *Add a task* and press Enter. Double-click a task to rename it. Press anywhere on a task and drag to reorder.
 - **Priority tags:** High, Medium or Low. Click the tag to change it.
-- **Due date and time:** click the calendar icon on a task (it appears on hover). You get a notification at the due time, or earlier if you change it in Settings.
+- **Due date and time:** click the calendar icon on a task (it appears on hover). Pick a day, then drag the time ruler or tap a common time. You get a notification at the due time, or earlier if you change it in Settings.
 - **Completed:** checking a task strikes it through and drops it into *Completed*. Click *Completed* to open it. From there you can restore a task, delete it, or clear everything. Completed tasks are deleted automatically after 7 days (changeable in Settings).
 - **Pomodoro timer:** drag the ruler or pick a preset (5m / 25m / 15m), then click *start*. A soft chime plays when time is up. The countdown also shows in the menu bar.
 - **Menu bar app:** click the icon in the menu bar to open or hide Focus. Right-click it for New Task, the timer, Settings and Quit. Closing the window only hides it, and Focus never shows in the Dock.
